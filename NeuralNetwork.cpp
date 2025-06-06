@@ -1,4 +1,5 @@
 // includes
+#include <algorithm>
 #include "NeuralNetwork.hpp"
 using namespace std;
 
@@ -8,38 +9,41 @@ using namespace std;
 
 // STUDENT TODO: IMPLEMENT
 void NeuralNetwork::eval() {
-    //stub
+    evaluating = true;
 }
 
 // STUDENT TODO: IMPLEMENT
 void NeuralNetwork::train() {
-    //stub
+    evaluating = false;
 }
 
 // STUDENT TODO: IMPLEMENT
 void NeuralNetwork::setLearningRate(double lr) {
-    //stub
+    learningRate = lr;
 }
 
 // STUDENT TODO: IMPLEMENT
 void NeuralNetwork::setInputNodeIds(std::vector<int> inputNodeIds) {
-    //stub
+    this->inputNodeIds = inputNodeIds;
 }
 
 // STUDENT TODO: IMPLEMENT
 void NeuralNetwork::setOutputNodeIds(std::vector<int> outputNodeIds) {
-    //stub
+    this->outputNodeIds = outputNodeIds;
 }
 
 // STUDENT TODO: IMPLEMENT
 vector<int> NeuralNetwork::getInputNodeIds() const {
-    return vector<int>(); //stub
+    return vector<int>(inputNodeIds);
 }
 
 // STUDENT TODO: IMPLEMENT
 vector<int> NeuralNetwork::getOutputNodeIds() const {
-    return vector<int>(); //stub
+    return vector<int>(outputNodeIds);
 }
+
+
+
 
 // STUDENT TODO: IMPLEMENT
 vector<double> NeuralNetwork::predict(DataInstance instance) {
@@ -54,10 +58,36 @@ vector<double> NeuralNetwork::predict(DataInstance instance) {
         return vector<double>();
     }
 
-    // BFT implementation goes here
+    for (size_t i = 0; i < inputNodeIds.size(); i++) {
+	int in = inputNodeIds[i];
+	nodes[in]->preActivationValue = input[i];
+    }	
 
+    // BFT implementation goes here
     // 1. Set up your queue initialization
     // 2. Start visiting nodes using the queue
+
+    set<int> visited;    
+    queue<int> q;
+    for (int in : getInputNodeIds()) {
+	q.push(in);
+	visited.insert(in);
+    }
+
+    while(!q.empty()) {
+	int i = q.front();
+	q.pop();
+	visitPredictNode(i);
+	
+	for (const pair<const int, Connection>& c : adjacencyList[i]) {
+	    visitPredictNeighbor(c.second);
+	    
+	    if (visited.find(c.first) == visited.end()) {
+	    	q.push(c.first);
+		visited.insert(c.first);
+	    }
+	}
+    }
 
     vector<double> output;
     for (int i = 0; i < outputNodeIds.size(); i++) {
@@ -76,6 +106,11 @@ vector<double> NeuralNetwork::predict(DataInstance instance) {
     }
     return output;
 }
+
+
+
+
+
 // STUDENT TODO: IMPLEMENT
 bool NeuralNetwork::contribute(double y, double p) {
 
@@ -88,8 +123,15 @@ bool NeuralNetwork::contribute(double y, double p) {
     // There is no need to visitContributeNode for the input layer since there is no bias to update.
 
 
+    for (int in : inputNodeIds) {
+	for (auto& [key, connection] : adjacencyList[in]) {
+            incomingContribution = contribute(key, y, p);
+            visitContributeNeighbor(connection, incomingContribution, outgoingContribution); 
+	}
+    }
+    
     flush();
-
+    
     return true;
 }
 // STUDENT TODO: IMPLEMENT
@@ -102,13 +144,27 @@ double NeuralNetwork::contribute(int nodeId, const double& y, const double& p) {
     // find each incoming contribution, and contribute to the nodes outgoing weights
     // If the node is already found, use its precomputed contribution from the contributions map
 
+
     if (adjacencyList.at(nodeId).empty()) {
         // base case, we are at the end
         outgoingContribution = -1 * ((y - p) / (p * (1 - p)));
-    } 
+	return outgoingContribution;
+    }
+    
+    if (contributions.find(nodeId) != contributions.end()) {
+	return contributions[nodeId];
+    }
+    else {
+    	for (auto& [neighbor, connection] : adjacencyList[nodeId]) {   
+	    incomingContribution = contribute(neighbor, y, p);
+	    visitContributeNeighbor(connection, incomingContribution, outgoingContribution);
+	}
+    }
+
+    visitContributeNode(nodeId, outgoingContribution);
 
     // Now contribute to yourself and prepare the outgoing contribution
-
+    contributions[nodeId] = outgoingContribution;
     return outgoingContribution;
 }
 // STUDENT TODO: IMPLEMENT
@@ -120,13 +176,38 @@ bool NeuralNetwork::update() {
     // Each connection has a delta term
 
     // use the formulas for each update
-    // bias update: bias = bias - (learningRate * delta)
+    // bias update: bias = bias - (LearningRate * delta)
     // weight update: weight = weight - (learningRate * delta)
     // reset the delta term for each node and connection to zero.
     
+
+    queue<int> q;
+    vector<int> visited;
+    for (int in : getInputNodeIds()) {
+        q.push(in);
+	visited.push_back(in);
+    }
+
+    while(!q.empty()) {
+        int i = q.front();
+	q.pop();
+        nodes[i]->bias -= (learningRate * nodes[i]->delta);
+	nodes[i]->delta = 0.0;
+	
+        for (pair<const int, Connection>& c : adjacencyList[i]) {
+            
+	    c.second.weight -= (learningRate * c.second.delta);
+            c.second.delta = 0.0;
+
+	    if (find(visited.begin(), visited.end(), c.first) == visited.end()) {
+            	q.push(c.first);
+		visited.push_back(c.first);
+	    }
+        }
+    }
+
     flush();
-    return true;
-    
+    return true; 
 }
 
 
