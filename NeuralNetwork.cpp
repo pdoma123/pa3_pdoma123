@@ -58,35 +58,54 @@ vector<double> NeuralNetwork::predict(DataInstance instance) {
         return vector<double>();
     }
 
+    for (size_t i = 0; i < nodes.size(); i++) {
+	if (nodes[i] != nullptr) {
+	    nodes[i]->preActivationValue = 0;
+	    nodes[i]->postActivationValue = 0;
+	}
+    }
+
     for (size_t i = 0; i < inputNodeIds.size(); i++) {
 	int in = inputNodeIds[i];
 	nodes[in]->preActivationValue = input[i];
-    }	
+	nodes[in]->postActivationValue = input[i];
+    }
+
 
     // BFT implementation goes here
     // 1. Set up your queue initialization
     // 2. Start visiting nodes using the queue
 
-    set<int> visited;    
     queue<int> q;
+    queue<int> other;
+
     for (int in : getInputNodeIds()) {
 	q.push(in);
-	visited.insert(in);
     }
 
     while(!q.empty()) {
-	int i = q.front();
-	q.pop();
-	visitPredictNode(i);
+    	
+	while (!q.empty()) {
+	    int id = q.front();
+	    q.pop();
 	
-	for (const pair<const int, Connection>& c : adjacencyList[i]) {
-	    visitPredictNeighbor(c.second);
-	    
-	    if (visited.find(c.first) == visited.end()) {
-	    	q.push(c.first);
-		visited.insert(c.first);
+	    for (auto& [key, connection] : adjacencyList[id]) {
+		visitPredictNeighbor(connection);
+		other.push(connection.dest);
 	    }
-	}
+    	}
+	set<int> visited;
+	while (!other.empty()) {
+	    int id = other.front();
+    	    other.pop();
+	    
+    	    if (visited.find(id) == visited.end()) {
+	        visited.insert(id);
+    		visitPredictNode(id);
+		q.push(id);
+	    }
+	}	    
+	     
     }
 
     vector<double> output;
@@ -125,7 +144,7 @@ bool NeuralNetwork::contribute(double y, double p) {
 
     for (int in : inputNodeIds) {
 	for (auto& [key, connection] : adjacencyList[in]) {
-            incomingContribution = contribute(key, y, p);
+            incomingContribution = contribute(connection.dest, y, p);
             visitContributeNeighbor(connection, incomingContribution, outgoingContribution); 
 	}
     }
@@ -141,18 +160,14 @@ double NeuralNetwork::contribute(int nodeId, const double& y, const double& p) {
     double outgoingContribution = 0;
     NodeInfo* currNode = nodes.at(nodeId);
 
-    // find each incoming contribution, and contribute to the nodes outgoing weights
-    // If the node is already found, use its precomputed contribution from the contributions map
+     if (contributions.find(nodeId) != contributions.end()) {
+        return contributions[nodeId];
+    }
 
 
     if (adjacencyList.at(nodeId).empty()) {
         // base case, we are at the end
         outgoingContribution = -1 * ((y - p) / (p * (1 - p)));
-	return outgoingContribution;
-    }
-    
-    if (contributions.find(nodeId) != contributions.end()) {
-	return contributions[nodeId];
     }
     else {
     	for (auto& [neighbor, connection] : adjacencyList[nodeId]) {   
